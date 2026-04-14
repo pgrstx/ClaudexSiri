@@ -1,23 +1,14 @@
 """
-Wake word detection.
+Wake word detection using a persistent audio stream (no mic flickering).
 
 Two backends:
-  - "whisper"    : offline, transcribes 2-s chunks with Whisper tiny, checks for
-                   "hey claude" / "hey, claude" / similar phrases.
-  - "porcupine"  : Picovoice Porcupine — ultra-low CPU, fully offline, needs a
-                   free access key from console.picovoice.ai and a custom
-                   "Hey Claude" keyword file (.ppn).
+  - "whisper"    : offline, transcribes 2-s chunks with Whisper tiny.
+  - "porcupine"  : ultra-low CPU, needs free Picovoice key + .ppn file.
 """
-import time
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from config import (
-    WAKE_WORD_ENGINE,
-    WAKE_WORDS,
-    CHUNK_SECONDS,
-    PICOVOICE_ACCESS_KEY,
-)
+from config import WAKE_WORD_ENGINE, WAKE_WORDS, CHUNK_SECONDS, PICOVOICE_ACCESS_KEY
 
 
 class WakeDetector:
@@ -29,10 +20,7 @@ class WakeDetector:
         self._load_backend()
 
     def listen(self) -> bool:
-        """
-        Block until a wake word is heard.
-        Returns True when detected.
-        """
+        """Block until a wake word is heard. Returns True when detected."""
         if self.engine == "porcupine":
             return self._listen_porcupine()
         return self._listen_whisper()
@@ -49,10 +37,13 @@ class WakeDetector:
             self._load_porcupine()
 
     def _listen_whisper(self) -> bool:
-        import tempfile
-        import os
+        """
+        Read 2-second chunks from the ALREADY-OPEN recorder stream.
+        No open/close — mic light stays solid.
+        """
         while True:
-            pcm = self.recorder.record_chunk(CHUNK_SECONDS)
+            # read from persistent stream — no open/close
+            pcm = self.recorder.read_seconds(CHUNK_SECONDS)
             wav_path = self.recorder.pcm_to_wav(pcm)
             try:
                 result = self._model.transcribe(
@@ -77,7 +68,6 @@ class WakeDetector:
     def _load_porcupine(self):
         try:
             import pvporcupine
-            # Look for a custom .ppn keyword file next to this script
             keyword_path = os.path.join(
                 os.path.dirname(__file__), "..", "..", "keywords", "hey-claude.ppn"
             )
@@ -87,43 +77,22 @@ class WakeDetector:
                     keyword_paths=[keyword_path],
                 )
             else:
-                # Fallback to "hey google" built-in keyword as a stand-in
                 self._porcupine = pvporcupine.create(
                     access_key=PICOVOICE_ACCESS_KEY,
                     keywords=["hey google"],
                 )
-                print(
-                    "[WakeDetector] No hey-claude.ppn found — using 'hey google' "
-                    "as wake word.\n"
-                    "  → Create a custom keyword at console.picovoice.ai and save "
-                    "it to keywords/hey-claude.ppn"
-                )
+                print("[WakeDetector] No hey-claude.ppn — using 'hey google' as wake word.")
         except ImportError:
             print("[WakeDetector] pvporcupine not installed — falling back to Whisper.")
             self.engine = "whisper"
             self._load_backend()
 
     def _listen_porcupine(self) -> bool:
-        import pyaudio
         import struct
-        pa = pyaudio.PyAudio()
-        stream = pa.open(
-            rate=self._porcupine.sample_rate,
-            channels=1,
-            format=pyaudio.paInt16,
-            input=True,
-            frames_per_buffer=self._porcupine.frame_length,
-        )
-        try:
-            while True:
-                pcm = stream.read(
-                    self._porcupine.frame_length, exception_on_overflow=False
-                )
-                pcm = struct.unpack_from("h" * self._porcupine.frame_length, pcm)
-                idx = self._porcupine.process(pcm)
-                if idx >= 0:
-                    return True
-        finally:
-            stream.stop_stream()
-            stream.close()
-            pa.terminate()
+        while True:
+            pcm = self.recorder.read_seconds(
+                self._porcupine.frame_length / self._porcupine.sample_rate
+            )
+            pcm_ints = struct.unpack_from("h" * self._porcupine.frame_length, pcm)
+            if self._porcupine.process(pcm_ints) >= 0:
+                return True

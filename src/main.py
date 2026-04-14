@@ -110,15 +110,23 @@ class ClaudexSiriApp(rumps.App):
 
 def run_cli():
     """Run in terminal without menu bar (useful for debugging)."""
+    import signal
+
     print("╔══════════════════════════════════╗")
     print("║     Hey Claude — Voice Mode      ║")
     print("╚══════════════════════════════════╝")
     print("Say 'Hey Claude' to wake up.\nCtrl-C to exit.\n")
+
     assistant = Assistant()
     assistant.start()
+
+    # Keep the main thread alive; survive SIGHUP (terminal close)
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+
     try:
-        import signal
-        signal.pause()
+        while True:
+            import time
+            time.sleep(1)
     except KeyboardInterrupt:
         print("\nGoodbye!")
         assistant.stop()
