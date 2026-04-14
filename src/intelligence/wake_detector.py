@@ -38,22 +38,45 @@ class WakeDetector:
 
     def _listen_whisper(self) -> bool:
         """
-        Read 2-second chunks from the ALREADY-OPEN recorder stream.
-        No open/close — mic light stays solid.
+        Sliding-window wake word detection.
+        Keeps a 3-second rolling buffer, advances by 0.5 s each step.
+        This ensures "Hey Claude" is never split across chunk boundaries.
         """
+        import collections
+        from audio.recorder import CHUNK_SIZE
+        from config import SAMPLE_RATE
+
+        step_secs = 0.5          # how often we check
+        window_secs = 3.0        # how much audio we transcribe each time
+        step_frames = int(SAMPLE_RATE * step_secs)
+        window_frames = int(SAMPLE_RATE * window_secs)
+
+        # rolling deque of raw int16 bytes
+        buf = collections.deque(maxlen=window_frames * 2)  # bytes, 2 bytes/sample
+
         while True:
-            # read from persistent stream — no open/close
-            pcm = self.recorder.read_seconds(CHUNK_SECONDS)
-            wav_path = self.recorder.pcm_to_wav(pcm)
+            # read one step of audio from the persistent stream
+            new_pcm = self.recorder.read_seconds(step_secs)
+            buf.extend(new_pcm)
+
+            if len(buf) < window_frames * 2:
+                continue  # not enough audio yet
+
+            window_pcm = bytes(list(buf)[-window_frames * 2:])
+            wav_path = self.recorder.pcm_to_wav(window_pcm)
             try:
                 result = self._model.transcribe(
                     wav_path,
                     language="en",
                     fp16=False,
                     task="transcribe",
+                    condition_on_previous_text=False,
                 )
                 text = result.get("text", "").lower().strip()
-                if any(w in text for w in WAKE_WORDS):
+                if text:
+                    print(f"[Wake] heard: {text!r}", end="\r", flush=True)
+                if self._matches_wake_word(text):
+                    print()  # newline after the \r
                     return True
             except Exception:
                 pass
@@ -62,6 +85,29 @@ class WakeDetector:
                     os.unlink(wav_path)
                 except Exception:
                     pass
+
+    @staticmethod
+    def _matches_wake_word(text: str) -> bool:
+        """
+        Fuzzy match — Whisper tiny often mishears 'claude' as
+        'cloud', 'clod', 'claud', 'claudia', etc.
+        """
+        # exact phrases
+        triggers = [
+            "hey claude", "hey, claude", "okay claude", "ok claude",
+            "hey claud", "hey cloud", "hey clod", "hey clade",
+            "a claude", "hey claudia", "hey clot",
+            "hey kloud", "hey klod",
+        ]
+        if any(t in text for t in triggers):
+            return True
+        # just "claude" said alone (short utterance)
+        words = text.split()
+        if len(words) <= 3 and any(
+            w in ("claude", "claud", "cloud", "claudia") for w in words
+        ):
+            return True
+        return False
 
     # ── Porcupine backend ─────────────────────────────────────────────────────
 
