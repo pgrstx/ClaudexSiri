@@ -3,15 +3,17 @@
   "configurations": [
     {
       "name": "Hey Claude (Menu Bar)",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "python3",
       "runtimeArgs": ["src/main.py"],
-      "port": 0
+      "port": 0,
+      "autoPort": true
     },
     {
       "name": "Hey Claude (CLI / Debug)",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "python3",
       "runtimeArgs": ["src/main.py", "--cli"],
-      "port": 0
+      "port": 0,
+      "autoPort": true
     }
   ]
 }
