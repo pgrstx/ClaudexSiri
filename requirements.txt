@@ -1,0 +1,17 @@
+# Core AI
+anthropic>=0.40.0
+openai-whisper>=20231117
+
+# Audio
+pyaudio>=0.2.14
+numpy>=1.26.0
+webrtcvad>=2.0.10
+
+# macOS menu bar
+rumps>=0.4.0
+
+# Utilities
+python-dotenv>=1.0.0
+
+# Optional: Picovoice wake word engine (faster, offline)
+# pvporcupine>=3.0.0

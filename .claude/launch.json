@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Hey Claude (Menu Bar)",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["src/main.py"],
+      "port": 0
+    },
+    {
+      "name": "Hey Claude (CLI / Debug)",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["src/main.py", "--cli"],
+      "port": 0
+    }
+  ]
+}
